@@ -1,0 +1,474 @@
+# Attribute GRR MSA
+# based on AIAG MSA Manual
+# Cliff Long
+# 2026-05-14
+
+
+# LOAD PACKAGES ###############################################################
+
+library(here)
+library(readxl)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(writexl)
+library(irr)
+library(ggplot2)
+library(scales)
+library(purrr)
+library(broom)
+library(stringr)
+
+
+# for confusion matrix and misclassification rate
+library(caret)
+library(ISLR)
+#library(InformationValue) # package retired
+
+
+# explore package 'agreement'
+# https://github.com/jmgirard/agreement
+# library(devtools)
+# library(agreement)
+
+
+# install InformationValue
+# devtools::install_github('selva86/informationvalue')
+library(InformationValue)
+
+
+# citation for R to include in report
+citation()
+sessionInfo()
+
+
+## exploration of steps to get package 'agreement'
+# library(rlang)
+# help(package = 'Information')
+# help(package = 'rlang')
+# help(package = 'remotes') # required by devtools
+
+
+# REFERENCES ##################################################################
+
+
+AIAG. AIAG Measurement Systems Analysis (MSA) Reference Manual. 4th ed., Chrysler, Ford, GM, 2010.
+Confusion Matrix. https://en.wikipedia.org/wiki/Confusion_matrix.
+“Fleiss’ Kappa.” Wikipedia, 25 Jan. 2024. Wikipedia, https://en.wikipedia.org/w/index.php?title=Fleiss%27_kappa&oldid=1198843670.
+Fleiss’ Kappa - Citizendium. https://en.citizendium.org/wiki/Fleiss%27_kappa. Accessed 29 Mar. 2024.
+
+
+
+
+# LOAD DATA ###################################################################
+
+## initial load ---------------------------------------------------------------
+
+fname <- "aiag_table_12_attr_msa.xlsx"
+fsheet <- "aiag_table_12_attr_msa_long"
+
+
+# get data
+d0 <- read_excel(path = here::here('data', fname), sheet = fsheet)
+glimpse(d0)
+
+
+# clean data variable names
+d1 <- d0 %>% clean_names()
+glimpse(d1)
+
+
+
+### ASSUMES DATA TABLE IN LONG FORMAT (vs WIDE)
+
+
+## prep data ------------------------------------------------------------------
+
+### rename vars
+# inspector (from appraiser)
+# specimen (from part)
+# true_state (from reference)
+# trial
+# one (add)
+# trial_label (unused in this example, no blinding btwn trials)
+# trial_result (from xxxxx)
+
+d1a <- d1 %>% 
+  rename(inspector = appr, 
+         specimen = partnum, 
+         true_state = reference, 
+         trial = trial, 
+         trial_result = rating) %>% 
+  mutate(one = 1) %>% 
+  select(-one_of('part'))
+
+glimpse(d1a)
+
+head(d1a)
+
+
+# quick look
+with(d1a, table(trial, trial_result))
+
+
+
+## pivot structure ------------------------------------------------------------
+
+# create variable to indicate if appraiser result matches true state
+d2 <- d1a %>%
+  mutate(trial_true_agree = if_else(trial_result == true_state, 1, 0))
+
+glimpse(d2)
+
+
+# export to excel to include in report
+# write_xlsx(x = d2, path = "d2_out_4report.xlsx")
+
+
+# quick verification
+xtabs(~ inspector + specimen, data = d2)
+
+
+
+# ANALYSIS - Kappa Method #####################################################
+
+
+# prep data format for irr package
+
+keep_wide <- c('trial', 'specimen', 'inspector', 'trial_result')
+drop_cols <- c('trial', 'specimen')
+
+
+d2w <- d2 %>% 
+  select(all_of(keep_wide)) %>%
+  pivot_wider(names_from = 'inspector', 
+              values_from = 'trial_result') %>% 
+  select(-one_of(drop_cols))
+
+
+## irr: icc between pairs of raters -------------------------------------------
+
+# raters A and B
+d_ratings_AB <- d2w %>% select(all_of(c('A', 'B')))
+
+# raters A and C
+d_ratings_AC <- d2w %>% select(all_of(c('A', 'C')))
+
+# raters B and C
+d_ratings_BC <- d2w %>% select(all_of(c('B', 'C')))
+
+
+
+(kappa2_AB <- kappa2(ratings = d_ratings_AB))
+
+(kappa2_AC <- kappa2(ratings = d_ratings_AC))
+
+(kappa2_BC <- kappa2(ratings = d_ratings_BC))
+
+
+# NOTE: matches the AIAG output page 129
+
+
+## irr: overall analysis fleiss kappa -----------------------------------------
+
+kappam.fleiss(d2w)
+kappam.fleiss(d2w, detail = TRUE)
+
+
+
+## irr: overall analysis lights kappa -----------------------------------------
+
+kappam.light(d2w)
+
+
+
+# irr: percent agreement among raters
+
+agree(d2w)
+
+
+
+# ANALYSIS - agreement with standard ##########################################
+
+## agreement with standard - INTER-rater --------------------------------------
+
+d2 %>% 
+  summarize(ct_correct = sum(trial_true_agree), 
+            total = n(), 
+            pct_correct = ct_correct / total) 
+
+
+d2 %>% 
+  # add confidence intervals 
+  count(trial_true_agree) %>% 
+  mutate(prop = n / sum(n), 
+         lower = lapply(n, prop.test, n = sum(n)), 
+         upper = sapply(lower, function(x) x$conf.int[2]), 
+         lower = sapply(lower, function(x) x$conf.int[1])) %>% 
+  filter(trial_true_agree == 1)
+
+
+
+## agreement with standard - by inspector -------------------------------------
+
+### prep data for plotting -----
+d2_summary_byinsp <- d2 %>% 
+  group_by(inspector) %>% 
+  summarize(ct_agree = sum(trial_true_agree), 
+            total_obs = length(trial_true_agree), 
+            true_state = true_state[1]) %>% 
+  mutate(prop_correct = map2(ct_agree, total_obs, ~ prop.test(.x, .y, conf.level = 0.95) %>% 
+                               broom::tidy())) %>% 
+  unnest(prop_correct) %>% 
+  mutate(cross50 = case_when(conf.low <= 0.5 ~ 'below',
+                             TRUE ~ 'above'))
+
+d2_summary_byinsp
+
+glimpse(d2_summary_byinsp)
+
+
+### plot data -----
+d2_summary_byinsp %>% 
+  # filter(trial_true_agree == 1) %>%
+  ggplot(aes(x = inspector, y = estimate)) +
+  geom_point() +
+  geom_hline(yintercept = 0.5, linetype = 2, color = 'blue') +
+  geom_segment(aes(x = inspector, xend = inspector, y = conf.low, yend = conf.high, color = cross50)) +
+  ggtitle(label = "Percent Agreement with TRUE STATE",
+          subtitle = "by INSPECTOR") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  scale_color_manual(values=c("blue", "red", "#00B81F", "red")) +
+  ylab("percent agreement with true state") + 
+  theme(legend.position = 'none') + 
+  NULL
+
+
+## agreement with standard - by inspector and standard ------------------------
+
+### prep data for plotting -----
+d2_summary_byinsp2 <- d2 %>% 
+  group_by(inspector, true_state) %>% 
+  summarize(ct_agree = sum(trial_true_agree), 
+            total_obs = length(trial_true_agree), 
+            true_state = true_state[1]) %>% 
+  mutate(prop_correct = map2(ct_agree, total_obs, ~ prop.test(.x, .y, conf.level = 0.95) %>% 
+                               broom::tidy())) %>% 
+  unnest(prop_correct) %>% 
+  mutate(cross50 = case_when(conf.low <= 0.5 ~ 'below',
+                             TRUE ~ 'above'))
+
+d2_summary_byinsp2
+
+glimpse(d2_summary_byinsp2)
+
+
+### plot data -----
+d2_summary_byinsp2 %>% 
+  # filter(trial_true_agree == 1) %>%
+  ggplot(aes(x = inspector, y = estimate)) +
+  geom_point() +
+  geom_hline(yintercept = 0.5, linetype = 2, color = 'blue') +
+  geom_segment(aes(x = inspector, xend = inspector, y = conf.low, yend = conf.high, color = cross50)) +
+  ggtitle(label = "Percent Agreement with TRUE STATE",
+          subtitle = "by INSPECTOR") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  # scale_color_manual(values=c("blue", "red", "#00B81F", "red")) +
+  ylab("percent agreement with true state") + 
+  # geom_point(aes(x = inspector, y = 0)) + 
+  # theme(legend.position='none') + 
+  facet_wrap(~ true_state) + 
+  NULL
+
+
+## agreement with standard - by specimen (part) -------------------------------
+# https://stackoverflow.com/questions/50977337/calling-prop-test-function-in-r-with-dplyr
+
+
+### prep data for plotting -----
+d2_summary_bypart <- d2 %>% 
+  group_by(specimen) %>% 
+  summarize(ct_agree = sum(trial_true_agree), 
+            total_obs = length(trial_true_agree), 
+            true_state = true_state[1]) %>% 
+  mutate(prop_correct = map2(ct_agree, total_obs, ~ prop.test(.x, .y, conf.level = 0.95) %>% 
+                               broom::tidy())) %>% 
+  unnest(prop_correct) %>% 
+  mutate(cross50 = case_when(conf.low <= 0.5 ~ 'below',
+                             TRUE ~ 'above'))
+
+d2_summary_bypart
+glimpse(d2_summary_bypart)
+
+
+
+### plot data -----
+d2_summary_bypart %>% 
+  ggplot(aes(x = specimen, y = estimate)) +
+  geom_point() +
+  geom_hline(yintercept = 0.5, linetype = 2, color = 'blue') +
+  geom_segment(aes(x = specimen, xend = specimen, y = conf.low, yend = conf.high, color = cross50)) +
+  ggtitle(label = "Percent Agreement with TRUE STATE",
+          subtitle = "by SPECIMEN") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  scale_color_manual(values=c("blue", "red", "#00B81F", "red")) +
+  ylab("percent agreement with true state") +
+  #geom_point(aes(x = specimen, y = 0, color = true_state), alpha = 0.5) + 
+  theme(legend.position='none') + 
+  scale_x_discrete(breaks = function(x) x[seq(1, length(x), by = 4)]) +
+  NULL
+
+
+## agreement with standard - by true_state ------------------------------------
+
+### prep data for plotting -----
+d2_summary_bystate <- d2 %>% 
+  group_by(true_state) %>% 
+  summarize(ct_agree = sum(trial_true_agree), 
+            total_obs = length(trial_true_agree), 
+            true_state = true_state[1]) %>% 
+  mutate(prop_correct = map2(ct_agree, total_obs, ~ prop.test(.x, .y, conf.level = 0.95) %>% 
+                               broom::tidy())) %>% 
+  unnest(prop_correct) %>% 
+  mutate(cross50 = case_when(conf.low <= 0.5 ~ 'below',
+                             TRUE ~ 'above')) %>% 
+  mutate(true_state_char = as.character(true_state))
+
+d2_summary_bystate
+glimpse(d2_summary_bystate)
+
+
+
+### plot data -----
+d2_summary_bystate %>% 
+  ggplot(aes(x = true_state, y = estimate)) +
+  geom_point() +
+  geom_hline(yintercept = 0.5, linetype = 2, color = 'blue') +
+  geom_segment(aes(x = true_state, xend = true_state, y = conf.low, yend = conf.high, color = cross50)) +
+  ggtitle(label = "Percent Agreement with TRUE STATE",
+          subtitle = "by STANDARD (True State)") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  scale_color_manual(values=c("blue", "red", "#00B81F", "red")) +
+  ylab("percent agreement with true state") +
+  geom_point(aes(x = true_state, y = 0), alpha = 0.5) + 
+  theme(legend.position='none') + 
+  scale_x_continuous(breaks = c(0, 1), expand = 0.1) +
+  NULL
+
+
+## agreement with standard - by trial -----------------------------------------
+# https://stackoverflow.com/questions/50977337/calling-prop-test-function-in-r-with-dplyr
+
+
+### prep data for plotting -----
+d2_summary_bytrial <- d2 %>% 
+  group_by(trial) %>% 
+  summarize(ct_agree = sum(trial_true_agree), 
+            total_obs = length(trial_true_agree), 
+            true_state = true_state[1]) %>% 
+  mutate(prop_correct = map2(ct_agree, total_obs, ~ prop.test(.x, .y, conf.level = 0.95) %>% 
+                               broom::tidy())) %>% 
+  unnest(prop_correct) %>% 
+  mutate(cross50 = case_when(conf.low <= 0.5 ~ 'below',
+                             TRUE ~ 'above'))
+
+d2_summary_bytrial
+glimpse(d2_summary_bytrial)
+
+
+
+### plot data -----
+d2_summary_bytrial %>% 
+  ggplot(aes(x = trial, y = estimate)) +
+  geom_point() +
+  geom_hline(yintercept = 0.5, linetype = 2, color = 'blue') +
+  geom_segment(aes(x = trial, xend = trial, y = conf.low, yend = conf.high, color = cross50)) +
+  ggtitle(label = "Percent Agreement with TRUE STATE",
+          subtitle = "by TRIAL") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  scale_color_manual(values=c("blue", "red", "#00B81F", "red")) +
+  ylab("percent agreement with true state") +
+  theme(legend.position='none') + 
+  NULL
+
+
+
+
+
+# ANALYSIS - Confusion Matrix #################################################
+
+## explore confusion matrix ---------------------------------------------------
+
+d2confusion <- d2 %>% 
+  select(true_state, trial_result) #%>% 
+  # mutate(true = ifelse(true_state == "conform", 1, 0), 
+  #        trial = ifelse(trial_result == "conform", 1, 0))
+# code commented out depends on how true_state and trial_result are coded in data
+
+glimpse(d2confusion)
+
+
+
+caret::confusionMatrix(data = as.factor(d2confusion$trial_result), 
+                       reference = as.factor(d2confusion$true_state), 
+                       positive = "1", 
+                       mode = "sens_spec")
+
+
+# Sensitivity: The “true positive rate” – the percentage of individuals the model correctly predicted would default.
+# Specificity: The “true negative rate” – the percentage of individuals the model correctly predicted would not default.
+# Total misclassification rate: The percentage of total incorrect classifications made by the model.
+
+
+
+## using InformationValue package ---------------------------------------------
+# calculate total misclassification error rate
+
+# (misclass_error_all <- InformationValue::misClassError(d2confusion$true_state, d2confusion$trial_result))
+# 
+# (correctclass_all <- 1 - misclass_error_all)
+# # seems to be the same as "accuracy" from the confusion matrix output
+
+
+
+# ANALYSIS - AIAG METHOD PCT EFFECTIVE SCORE ##################################
+# AIAG MSA Manual p. 127 to 132
+
+## effectiveness metric -------------------------------------------------------
+
+# for each part and operator, create indictor that shows whether complete
+# or incomplete agreement by appraiser across trials
+# group_by(inspector, specimen)
+# summarize(result_mean = mean(trial_result))
+
+d_agree_effective <- d2 %>%
+  group_by(inspector, specimen) %>% 
+  summarize(result_mean = mean(trial_result)) %>% 
+  mutate(full_agree = case_when(result_mean == 0 ~ 1, 
+                                result_mean == 1 ~ 1, 
+                                TRUE ~ 0))
+
+d_agree_effective %>% 
+  group_by(inspector) %>% 
+  summarize(mean_effective = mean(full_agree))
+# VERIFIED matches the AIAG output on page 131 for System % Effective Score
+
+
+
+## vs_reference metric --------------------------------------------------------
+
+d_agree_reference <- d2 %>%
+  group_by(inspector, specimen) %>% 
+  summarize(result_mean = mean(trial_result),
+            true_state_mean = mean(true_state)) %>% 
+  mutate(reference_agree = case_when(result_mean == true_state_mean ~ 1, 
+                                     TRUE ~ 0))
+
+d_agree_reference %>% 
+  group_by(inspector) %>% 
+  summarize(mean_reference_agree = mean(reference_agree))
+# VERIFIED matches the AIAG output on page 131 for System % Effective Score vs Reference
+
+
+
+# END CODE ####################################################################
