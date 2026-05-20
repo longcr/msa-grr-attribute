@@ -1,19 +1,23 @@
 ---
 title: 'R Notebook: AIAG Attribute MSA/GRR Example'
 author: "Cliff Long"
-output: github_document
+output:
+  html_document:
+    toc: true 
+    toc_float: true 
+    number_sections: true 
 ---
 
-```{r}
+```{r, echo = FALSE}
 #  html_document:
 #    df_print: paged
+#
+# github_document
 ```
 
 
 
-# LOAD PACKAGES 
-
-```{r message = FALSE}
+```{r, message = FALSE, echo = FALSE}
 # general
 library(here)
 library(readxl)
@@ -37,7 +41,8 @@ library(InformationValue) # package retired
 ```
 
 
-```{r echo = FALSE}
+```{r, echo = FALSE}
+# here()
 # explore package 'agreement'
 # https://github.com/jmgirard/agreement
 # library(devtools)
@@ -45,14 +50,14 @@ library(InformationValue) # package retired
 ```
 
 
-```{r echo = FALSE}
+```{r, echo = FALSE}
 # to install package InformationValue
 # devtools::install_github('selva86/informationvalue')
 # library(InformationValue)
 ```
 
 
-```{r echo = FALSE}
+```{r, echo = FALSE}
 ## exploration of steps to get package 'agreement'
 # library(rlang)
 # help(package = 'Agreement')
@@ -61,11 +66,11 @@ library(InformationValue) # package retired
 ```
 
 
-# CITATION
+# CITATION and SESSION INFO
 
 Citation for R to include in report:
 
-```{r}
+```{r, echo = FALSE}
 x_cite <- citation()
 print(x_cite, style = "text")
 ```
@@ -73,17 +78,19 @@ print(x_cite, style = "text")
 
 Session info: 
 
-```{r, results = 'asis'}
+```{r, echo = FALSE, results = 'asis'}
 s_info <- sessionInfo()
 
 cat(s_info$R.version$version.string)
-cat("\n \n Base Packages \n")
+cat("\n \n Base Packages")
+cat("\n \n")
 cat(s_info$basePkgs)
-cat("\n \n Other Packages \n")
+cat("\n \n Other Packages")
+cat("\n \n")
 cat(names(s_info$otherPkgs))
 ```
 
-# REFERENCES
+# REFERENCES 
 
 +  AIAG. AIAG Measurement Systems Analysis (MSA) Reference Manual. 4th ed., Chrysler, Ford, GM, 2010. 
 +  Confusion Matrix. https://en.wikipedia.org/wiki/Confusion_matrix. 
@@ -91,7 +98,9 @@ cat(names(s_info$otherPkgs))
 +  Fleiss’ Kappa - Citizendium. https://en.citizendium.org/wiki/Fleiss%27_kappa. Accessed 29 Mar. 2024.
 
 
-# LOAD DATA 
+# LOAD AND PREPARE DATA 
+
+## Load Data 
 
 ```{r}
 # initial load 
@@ -99,11 +108,17 @@ fname <- "aiag_table_12_attr_msa.xlsx"
 fsheet <- "aiag_table_12_attr_msa_long"
 ```
 
+
 ```{r}
 # get data
 d0 <- read_excel(path = here::here('data', fname), sheet = fsheet)
+```
+
+
+```{r, echo = FALSE}
 #glimpse(d0)
 ```
+
 
 ```{r}
 # clean data variable names
@@ -112,12 +127,11 @@ glimpse(d1)
 ```
 
 
-# PREP DATA
+## Prep Data
 
 The following assumes that the spreadsheet data is in LONG format (vs WIDE).
 
-
-```{r}
+```{r, echo = FALSE}
 ### rename vars
 # inspector (from appraiser)
 # specimen (from part)
@@ -126,7 +140,10 @@ The following assumes that the spreadsheet data is in LONG format (vs WIDE).
 # one (add)
 # trial_label (unused in this example, no blinding btwn trials)
 # trial_result (from xxxxx)
+```
 
+
+```{r}
 d1a <- d1 %>% 
   rename(inspector = appr, 
          specimen = partnum, 
@@ -137,7 +154,10 @@ d1a <- d1 %>%
   mutate(one = 1) %>% 
   # remove redundant column after rename
   select(-one_of('part'))
+```
 
+
+```{r, echo = FALSE}
 glimpse(d1a)
 ```
 
@@ -146,8 +166,9 @@ glimpse(d1a)
 head(d1a)
 ```
 
+Quick verification by count.
 
-```{r}
+```{r, echo = FALSE}
 # quick look
 with(d1a, table(trial, trial_result))
 ```
@@ -179,8 +200,9 @@ xtabs(~ inspector + specimen, data = d2)
 
 
 
+# ANALYSIS - AIAG APPROACH
 
-# ANALYSIS - Kappa Method 
+## Kappa Method 
 
 
 ```{r}
@@ -197,45 +219,48 @@ d2w <- d2 %>%
 ```
 
 
-```{r}
-glimpse(d2w)
+```{r, echo = FALSE}
+# glimpse(d2w)
 ```
 
-```{r}
-head(d2w)
+```{r, echo = FALSE}
+# head(d2w)
 ```
 
 
 
-## IRR: ICC between pairs of raters 
+### IRR: ICC between pairs of raters 
 
-### compare raters A and B
+#### compare raters A and B
 
 ```{r}
 d_ratings_AB <- d2w %>% select(all_of(c('A', 'B')))
-(kappa2_AB <- kappa2(ratings = d_ratings_AB))
+kappa2_AB <- kappa2(ratings = d_ratings_AB)
+kappa2_AB
 ```
 
 
-### compare raters A and C
+#### compare raters A and C
 
 ```{r}
 d_ratings_AC <- d2w %>% select(all_of(c('A', 'C')))
-(kappa2_AC <- kappa2(ratings = d_ratings_AC))
+kappa2_AC <- kappa2(ratings = d_ratings_AC)
+kappa2_AC
 ```
 
 
-### compare raters B and C
+#### compare raters B and C
 
 ```{r}
 d_ratings_BC <- d2w %>% select(all_of(c('B', 'C')))
-(kappa2_BC <- kappa2(ratings = d_ratings_BC))
+kappa2_BC <- kappa2(ratings = d_ratings_BC)
+kappa2_BC
 ```
 
 NOTE: matches the AIAG output page 129
 
 
-## IRR: overall analysis Fleiss Kappa 
+### IRR: overall analysis Fleiss Kappa 
 
 Fleiss Kappa
 
@@ -252,7 +277,7 @@ kappam.fleiss(d2w, detail = TRUE)
 
 
 
-## IRR: overall analysis Lights Kappa
+### IRR: overall analysis Lights Kappa
 
 
 ```{r}
@@ -261,7 +286,7 @@ kappam.light(d2w)
 
 
 
-# IRR: percent agreement among raters
+### IRR: percent agreement among raters
 
 Using the "irr" package and the "agree" function.
 
@@ -271,8 +296,105 @@ irr::agree(d2w)
 
 
 
+## AIAG METHOD PCT EFFECTIVE SCORE 
 
-# ANALYSIS - agreement with standard 
+AIAG MSA Manual p. 127 to 132
+
+### effectiveness metric 
+
+Method: 
+
++ for each part and operator, create indicator that shows whether complete or incomplete agreement by appraiser across trials  
++ group_by(inspector, specimen)  
++ summarize(result_mean = mean(trial_result))  
+
+
+```{r, messages = FALSE}
+# prep data
+d_agree_effective <- d2 %>%
+  group_by(inspector, specimen) %>% 
+  summarize(result_mean = mean(trial_result)) %>% 
+  mutate(full_agree = case_when(result_mean == 0 ~ 1, 
+                                result_mean == 1 ~ 1, 
+                                TRUE ~ 0))
+```
+
+
+```{r}
+# generate AIAG results from page 131
+d_agree_effective %>% 
+  group_by(inspector) %>% 
+  summarize(mean_effective = mean(full_agree)) %>% 
+  pander()
+```
+
+
+NOTE: VERIFIED matches the AIAG output on page 131 for System % Effective Score.
+
+
+
+### vs reference metric 
+
+```{r}
+d_agree_reference <- d2 %>%
+  group_by(inspector, specimen) %>% 
+  summarize(result_mean = mean(trial_result),
+            true_state_mean = mean(true_state)) %>% 
+  mutate(reference_agree = case_when(result_mean == true_state_mean ~ 1, 
+                                     TRUE ~ 0))
+```
+
+
+```{r}
+d_agree_reference %>% 
+  group_by(inspector) %>% 
+  summarize(mean_reference_agree = mean(reference_agree)) %>% 
+  pander()
+```
+
+
+
+NOTE: VERIFIED matches the AIAG output on page 131 for System % Effective Score vs Reference
+
+
+
+
+
+# ANALYSIS - CONFUSION MATRIX 
+
+## explore confusion matrix 
+
+```{r, echo = FALSE}
+d2confusion <- d2 %>% 
+  select(true_state, trial_result) #%>% 
+  # mutate(true = ifelse(true_state == "conform", 1, 0), 
+  #        trial = ifelse(trial_result == "conform", 1, 0))
+# code commented out depends on how true_state and trial_result are coded in data
+
+# glimpse(d2confusion)
+# pander(d2confusion)
+```
+
+
+
+```{r}
+caret::confusionMatrix(data = as.factor(d2confusion$trial_result), 
+                       reference = as.factor(d2confusion$true_state), 
+                       positive = "1", 
+                       mode = "sens_spec")
+```
+
+NOTES on Sensitivity, Specificity, Misclassification Rate
+
++ Sensitivity: The “true positive rate” – the percentage of individuals the model correctly predicted would default.  
++ Specificity: The “true negative rate” – the percentage of individuals the model correctly predicted would not default.  
++ Total misclassification rate: The percentage of total incorrect classifications made by the model.  
+
+
+
+
+# EXPLORATORY-ONLY TABLES AND PLOTS
+
 
 ## agreement with standard - INTER-rater 
 
@@ -290,10 +412,7 @@ d2 %>%
 ```
 
 
-# EXPLORATORY-ONLY TABLES AND PLOTS
-
-
-## agreement with standard - by inspector 
+## agreement with standard - INTRA-rater (by inspector)
 
 ```{r}
 ### prep data for plotting 
@@ -398,7 +517,7 @@ d2_summary_bypart <- d2 %>%
   mutate(cross50 = case_when(conf.low <= 0.5 ~ 'below',
                              TRUE ~ 'above'))
 
-pander(d2_summary_bypart)
+# pander(d2_summary_bypart)
 
 #d2_summary_bypart
 #glimpse(d2_summary_bypart)
@@ -445,10 +564,13 @@ d2_summary_bystate <- d2 %>%
   mutate(true_state_char = as.character(true_state))
 
 pander(d2_summary_bystate)
+```
 
+```{r, echo = FALSE}
 # d2_summary_bystate
 # glimpse(d2_summary_bystate)
 ```
+
 
 
 ```{r}
@@ -490,7 +612,10 @@ d2_summary_bytrial <- d2 %>%
                              TRUE ~ 'above'))
 
 pander(d2_summary_bytrial)
+```
 
+
+```{r, echo = FALSE}
 # d2_summary_bytrial
 # glimpse(d2_summary_bytrial)
 ```
@@ -516,106 +641,17 @@ d2_summary_bytrial %>%
 
 
 
+MISC
 
-# ANALYSIS - Confusion Matrix 
+using InformationValue package 
 
-## explore confusion matrix 
+calculate total misclassification error rate
 
-```{r}
-d2confusion <- d2 %>% 
-  select(true_state, trial_result) #%>% 
-  # mutate(true = ifelse(true_state == "conform", 1, 0), 
-  #        trial = ifelse(trial_result == "conform", 1, 0))
-# code commented out depends on how true_state and trial_result are coded in data
+(misclass_error_all <- InformationValue::misClassError(d2confusion$true_state, d2confusion$trial_result))
+ 
+(correctclass_all <- 1 - misclass_error_all)
 
-# glimpse(d2confusion)
-# pander(d2confusion)
-```
+Note: appears to be the same as "accuracy" from the confusion matrix output
 
-
-
-```{r}
-caret::confusionMatrix(data = as.factor(d2confusion$trial_result), 
-                       reference = as.factor(d2confusion$true_state), 
-                       positive = "1", 
-                       mode = "sens_spec")
-```
-
-NOTES on Sensitivity, Specificity, Misclassification Rate
-
-+ Sensitivity: The “true positive rate” – the percentage of individuals the model correctly predicted would default.  
-+ Specificity: The “true negative rate” – the percentage of individuals the model correctly predicted would not default.  
-+ Total misclassification rate: The percentage of total incorrect classifications made by the model.  
-
-
-
-## using InformationValue package ---------------------------------------------
-# calculate total misclassification error rate
-
-# (misclass_error_all <- InformationValue::misClassError(d2confusion$true_state, d2confusion$trial_result))
-# 
-# (correctclass_all <- 1 - misclass_error_all)
-# # seems to be the same as "accuracy" from the confusion matrix output
-
-
-
-# ANALYSIS - AIAG METHOD PCT EFFECTIVE SCORE 
-
-AIAG MSA Manual p. 127 to 132
-
-## effectiveness metric 
-
-Method:
-+ for each part and operator, create indictor that shows whether complete or incomplete agreement by appraiser across trials  
-+ group_by(inspector, specimen)  
-+ summarize(result_mean = mean(trial_result))  
-
-
-```{r, messages = FALSE}
-# prep data
-d_agree_effective <- d2 %>%
-  group_by(inspector, specimen) %>% 
-  summarize(result_mean = mean(trial_result)) %>% 
-  mutate(full_agree = case_when(result_mean == 0 ~ 1, 
-                                result_mean == 1 ~ 1, 
-                                TRUE ~ 0))
-```
-
-
-```{r}
-# generate AIAG results from page 131
-d_agree_effective %>% 
-  group_by(inspector) %>% 
-  summarize(mean_effective = mean(full_agree)) %>% 
-  pander()
-```
-
-
-NOTE: VERIFIED matches the AIAG output on page 131 for System % Effective Score.
-
-
-
-## vs_reference metric 
-
-```{r}
-d_agree_reference <- d2 %>%
-  group_by(inspector, specimen) %>% 
-  summarize(result_mean = mean(trial_result),
-            true_state_mean = mean(true_state)) %>% 
-  mutate(reference_agree = case_when(result_mean == true_state_mean ~ 1, 
-                                     TRUE ~ 0))
-```
-
-
-```{r}
-d_agree_reference %>% 
-  group_by(inspector) %>% 
-  summarize(mean_reference_agree = mean(reference_agree)) %>% 
-  pander()
-```
-
-
-
-NOTE: VERIFIED matches the AIAG output on page 131 for System % Effective Score vs Reference
 
 

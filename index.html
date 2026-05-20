@@ -2499,12 +2499,24 @@ d2_summary_bystate %&gt;%
 <h2><span class="header-section-number">6.6</span> agreement with
 standard - by trial</h2>
 <p><a href="https://stackoverflow.com/questions/50977337/calling-prop-test-function-in-r-with-dplyr" class="uri">https://stackoverflow.com/questions/50977337/calling-prop-test-function-in-r-with-dplyr</a></p>
+<pre class="r"><code># prep data for plotting
+d2_summary_bytrial &lt;- d2 %&gt;% 
+  group_by(trial, true_state) %&gt;% 
+  summarize(ct_agree = sum(trial_true_agree), 
+            total_obs = length(trial_true_agree), 
+            true_state = true_state[1]) %&gt;% 
+  mutate(prop_correct = map2(ct_agree, total_obs, ~ prop.test(.x, .y, conf.level = 0.95) %&gt;% 
+                               broom::tidy())) %&gt;% 
+  unnest(prop_correct) %&gt;% 
+  mutate(cross50 = case_when(conf.low &lt;= 0.5 ~ &#39;below&#39;,
+                             TRUE ~ &#39;above&#39;))</code></pre>
 <pre><code>## `summarise()` has regrouped the output.
 ## ℹ Summaries were computed grouped by trial and true_state.
 ## ℹ Output is grouped by trial.
 ## ℹ Use `summarise(.groups = &quot;drop_last&quot;)` to silence this message.
 ## ℹ Use `summarise(.by = c(trial, true_state))` for per-operation grouping
 ##   (`?dplyr::dplyr_by`) instead.</code></pre>
+<pre class="r"><code>pander(d2_summary_bytrial)</code></pre>
 <table>
 <caption>Table continues below</caption>
 <colgroup>
